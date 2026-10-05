@@ -1,0 +1,15 @@
+{
+  "name": "red-vs-blue",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Red vs Blue: a two-player hex territory game, playable online with friends.",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node test/rules.test.js"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.39.0",
+    "redis": "^6.3.0"
+  }
+}

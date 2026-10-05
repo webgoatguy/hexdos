@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1117">
+<title>Red vs Blue</title>
+<meta name="description" content="A two-player territory game on an endless hex grid. Play with a friend online.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9 3l7 4v8l-7 4-7-4V7z' fill='%233a7bea'/%3E%3Cpath d='M23 13l7 4v8l-7 4-7-4v-8z' fill='%23e5484d'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0e1117;
+  --panel:rgba(21,25,33,.88);
+  --panel-solid:#161a22;
+  --field:#0f1218;
+  --border:rgba(255,255,255,.09);
+  --text:#e9ecf2;
+  --muted:#8d95a5;
+  --blue:#3a7bea;
+  --red:#e5484d;
+  --blue-soft:#9cc0ff;
+  --red-soft:#ffa3a6;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#board{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+#board.dragging{cursor:grabbing}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 8px 28px rgba(0,0,0,.35)}
+[hidden]{display:none !important}
+
+/* which pieces show in which mode */
+.only-online,.only-local{display:none !important}
+body[data-mode="online"] .only-online,body[data-mode="local"] .only-local{display:inline-flex !important}
+body[data-mode="lobby"] #top,body[data-mode="lobby"] #controls,body[data-mode="lobby"] #log,body[data-mode="lobby"] #invite{display:none !important}
+
+/* ---- top scoreboard ---- */
+#top{position:fixed;z-index:2;top:12px;left:50%;transform:translateX(-50%);
+  display:grid;grid-template-columns:minmax(170px,auto) auto minmax(170px,auto);gap:10px;
+  grid-template-areas:"blue status red"}
+.card{padding:10px 14px 11px;opacity:.62;transition:opacity .2s,border-color .2s,box-shadow .2s;min-width:0}
+#card-blue{grid-area:blue} #card-red{grid-area:red}
+.card.active{opacity:1}
+#card-blue.active{border-color:rgba(58,123,234,.8);box-shadow:0 0 0 1px rgba(58,123,234,.35),0 8px 30px rgba(58,123,234,.25)}
+#card-red.active{border-color:rgba(229,72,77,.8);box-shadow:0 0 0 1px rgba(229,72,77,.35),0 8px 30px rgba(229,72,77,.25)}
+.card-head{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);min-width:0}
+.pname{margin-left:auto;padding-left:8px;text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;color:#cfd5e0;
+  max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pname.waiting{color:var(--muted);font-style:italic;font-weight:500}
+.swatch{width:10px;height:10px;border-radius:3px;flex:none}
+#card-blue .swatch{background:var(--blue)} #card-red .swatch{background:var(--red)}
+.score{font-size:30px;font-weight:800;line-height:1.1;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.sub{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.proj{font-weight:600;color:#b9c3d4}
+.proj.down{color:var(--red-soft)}
+#status{grid-area:status;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 18px;min-width:210px;text-align:center}
+#turn-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#turn-msg{font-size:15px;font-weight:650;margin-top:3px;white-space:nowrap}
+#pips{display:flex;gap:6px;margin-top:7px;height:10px}
+.pip{width:10px;height:10px;border-radius:50%;border:2px solid currentColor}
+.pip.on{background:currentColor}
+#conn{font-size:11px;font-weight:700;color:var(--red-soft);margin-top:4px}
+
+/* ---- invite / seat-open panel ---- */
+#invite{position:fixed;z-index:3;top:122px;left:50%;transform:translateX(-50%);width:min(460px,calc(100vw - 24px));padding:12px 14px}
+#invite p{margin:0 0 8px;font-size:14px;font-weight:600}
+#invite .row{display:flex;gap:8px}
+#invite input{flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--field);color:var(--text);font:inherit;font-size:13px;-webkit-user-select:text;user-select:text}
+#invite button.go{background:var(--blue);border-color:transparent}
+
+/* ---- bottom controls + log ---- */
+#controls{position:fixed;z-index:2;right:12px;bottom:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+button{font:inherit;font-size:13px;font-weight:600;color:var(--text);background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:9px 13px;cursor:pointer;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  display:inline-flex;align-items:center;gap:7px;transition:background .15s,border-color .15s,opacity .15s}
+button:hover:not(:disabled){background:rgba(44,50,64,.95);border-color:rgba(255,255,255,.18)}
+button:disabled{opacity:.4;cursor:default}
+button.icon{padding:9px 10px;min-width:38px;justify-content:center}
+button svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#log{position:fixed;z-index:2;left:12px;bottom:12px;max-width:min(520px,calc(100vw - 640px));min-width:280px;padding:9px 13px;font-size:13px;line-height:1.45;color:#c6ccd8}
+#log b.blue{color:var(--blue-soft)} #log b.red{color:var(--red-soft)}
+#log .muted{color:var(--muted)}
+#legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+#legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.dot{width:12px;height:12px;border-radius:6px;border:1.5px solid rgba(255,255,255,.85);flex:none}
+.dot.nb{background:#15844d} .dot.blob{background:#f2b632}
+.dot.dmg{background:linear-gradient(90deg,var(--blue) 50%,var(--red) 50%)}
+
+/* ---- toast ---- */
+#toast{position:fixed;z-index:30;left:50%;bottom:112px;transform:translate(-50%,8px);opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;padding:10px 16px;font-size:14px;font-weight:600;max-width:calc(100vw - 32px);text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---- overlays: lobby, join, rules ---- */
+.overlay{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(8,10,14,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);overflow:auto}
+#modal{z-index:10;background:rgba(6,8,12,.62)}
+.sheet{width:100%;max-width:600px;max-height:100%;overflow:auto;padding:22px 24px 20px;background:var(--panel-solid);
+  border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);-webkit-user-select:text;user-select:text}
+.sheet.small{max-width:420px;padding:26px 24px 20px}
+.brand{display:flex;align-items:center;gap:11px;font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0}
+.brand svg{width:36px;height:36px;flex:none}
+.tagline{color:var(--muted);margin:6px 0 16px;font-size:14px;line-height:1.5}
+.field{display:block;margin:14px 0 0}
+.field>span{display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+.field input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--field);color:var(--text);font:inherit;font-size:15px}
+.field input:focus,.opt input:focus{outline:2px solid rgba(58,123,234,.65);outline-offset:0}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg button{flex-direction:column;justify-content:center;gap:1px;padding:8px 6px;background:var(--field);-webkit-backdrop-filter:none;backdrop-filter:none}
+.seg button small{font-size:11px;color:var(--muted);font-weight:500}
+.seg button.on[data-v="blue"]{border-color:var(--blue);background:rgba(58,123,234,.2)}
+.seg button.on[data-v="red"]{border-color:var(--red);background:rgba(229,72,77,.2)}
+.seg button.on[data-v="random"]{border-color:rgba(255,255,255,.55);background:rgba(255,255,255,.08)}
+details.more{margin-top:12px}
+details.more summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
+.wide{width:100%;justify-content:center}
+.primary{padding:12px 16px;font-size:15px;background:var(--blue);border-color:transparent;margin-top:18px}
+.primary:hover:not(:disabled){background:#4a88f0}
+.primary.red{background:var(--red)} .primary.red:hover:not(:disabled){background:#ec5a5e}
+.ghost{padding:11px 16px;font-size:14px;margin-top:8px;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+.linkbtn{background:none;border:none;color:var(--muted);text-decoration:underline;text-underline-offset:3px;padding:6px;margin:10px auto 0;display:flex;-webkit-backdrop-filter:none;backdrop-filter:none}
+.linkbtn:hover:not(:disabled){background:none;color:var(--text)}
+.error{background:rgba(229,72,77,.14);border:1px solid rgba(229,72,77,.45);color:#ffc9cb;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.45;margin:0 0 6px}
+.recent{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+.recent h3{margin:0 0 6px}
+.recent a{display:flex;justify-content:space-between;gap:12px;padding:7px 2px;color:#cfd5e0;text-decoration:none;font-size:14px;border-radius:6px}
+.recent a:hover{color:#fff}
+.recent a span:last-child{color:var(--muted);font-size:12px;white-space:nowrap}
+.sheet h2{margin:0;font-size:20px;letter-spacing:-.01em}
+.sheet h3{margin:20px 0 6px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.sheet p,.sheet li{font-size:14px;line-height:1.55;color:#cfd5e0}
+.sheet p{margin:6px 0}
+.sheet ul{margin:6px 0;padding-left:20px}
+.sheet li{margin:3px 0}
+.b{color:var(--blue-soft);font-weight:700} .r{color:var(--red-soft);font-weight:700}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--border);font-size:14px}
+.opt small{display:block;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.4}
+.opt input[type=number]{width:72px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--field);color:var(--text);font:inherit;font-size:14px}
+.opt input[type=checkbox]{width:18px;height:18px;accent-color:var(--blue);flex:none}
+.opt input:disabled{opacity:.5}
+.note{font-size:12px;color:var(--muted);margin:2px 0 6px}
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:1px 6px;border-radius:5px;border:1px solid var(--border);background:var(--field)}
+.sheet-foot{display:flex;justify-content:flex-end;margin-top:18px}
+.sheet-foot button{background:var(--blue);border-color:transparent}
+.sheet-foot button:hover:not(:disabled){background:#4a88f0}
+
+@media (max-width:1100px){ #log{max-width:min(440px,calc(100vw - 24px));bottom:62px} }
+@media (max-width:700px){
+  #top{left:10px;right:10px;transform:none;top:10px;grid-template-columns:1fr 1fr;grid-template-areas:"blue red" "status status";gap:8px}
+  .card{padding:8px 12px}
+  .score{font-size:24px}
+  .pname{max-width:80px}
+  #status{padding:7px 12px;min-width:0;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:4px 10px}
+  #turn-msg{margin-top:0;font-size:14px}
+  #pips,#conn{margin-top:0}
+  #invite{top:158px}
+  #controls{left:10px;right:10px;bottom:10px;justify-content:center}
+  #log{left:10px;right:10px;bottom:60px;max-width:none;min-width:0;font-size:12px}
+  #toast{bottom:160px}
+  button .label{display:none}
+  .zoom{display:none !important}
+}
+</style>
+</head>
+<body data-mode="lobby">
+<canvas id="board" aria-label="Hex game board"></canvas>
+
+<div id="top">
+  <div class="card panel" id="card-blue">
+    <div class="card-head"><span class="swatch"></span>Blue<span class="pname" id="name-blue"></span></div>
+    <div class="score" id="score-blue">0</div>
+    <div class="sub"><span id="count-blue">0 tiles</span><span class="proj" id="proj-blue" title="Change at the end of this turn if the board stayed as it is now"></span></div>
+  </div>
+  <div class="panel" id="status">
+    <div id="turn-label">Turn 1</div>
+    <div id="turn-msg"></div>
+    <div id="pips"></div>
+    <div id="conn" hidden>Reconnecting…</div>
+  </div>
+  <div class="card panel" id="card-red">
+    <div class="card-head"><span class="swatch"></span>Red<span class="pname" id="name-red"></span></div>
+    <div class="score" id="score-red">0</div>
+    <div class="sub"><span id="count-red">0 tiles</span><span class="proj" id="proj-red" title="Change at the end of this turn if the board stayed as it is now"></span></div>
+  </div>
+</div>
+
+<div id="invite" class="panel" hidden>
+  <p id="invite-text"></p>
+  <div class="row" id="invite-link-row">
+    <input id="invite-link" readonly aria-label="Game link">
+    <button id="btn-copy" class="go">Copy</button>
+  </div>
+  <div class="row" id="invite-join-row"><button id="btn-seat-join" class="go wide">Join</button></div>
+</div>
+
+<div id="log" class="panel">
+  <div id="log-text"></div>
+  <div id="legend">
+    <span><i class="dot nb"></i>+ from neighbors</span>
+    <span><i class="dot blob"></i>+ from blob size</span>
+    <span><i class="dot dmg"></i>− damage</span>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="btn-undo" title="Undo your last placement (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="label">Undo</span></button>
+  <button id="btn-zoom-out" class="icon zoom" title="Zoom out (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+  <button id="btn-zoom-in" class="icon zoom" title="Zoom in (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="btn-center" title="Fit all tiles in view (H)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span class="label">Recenter</span></button>
+  <button id="btn-rules" title="Rules and settings (?)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.5"/><path d="M12 17.2h.01"/></svg><span class="label">Rules</span></button>
+  <button id="btn-invite" class="only-online" title="Copy the link to this game"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="label">Invite</span></button>
+  <button id="btn-rematch" class="only-online" title="Clear the board and swap colors"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg><span class="label">Rematch</span></button>
+  <button id="btn-new" class="only-local" title="Clear the board"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg><span class="label">New game</span></button>
+  <button id="btn-menu" title="Back to the main menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="label">Menu</span></button>
+</div>
+
+<!-- main menu -->
+<div id="lobby" class="overlay">
+  <div class="sheet small" role="dialog" aria-labelledby="lobby-title">
+    <h1 class="brand" id="lobby-title"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 3l7 4v8l-7 4-7-4V7z" fill="#3a7bea"/><path d="M23 13l7 4v8l-7 4-7-4v-8z" fill="#e5484d"/></svg>Red vs Blue</h1>
+    <p class="tagline">Grow blobs, sandwich your opponent, and out-score them on an endless hex grid.</p>
+    <p class="error" id="lobby-error" hidden></p>
+    <label class="field"><span>Your name</span><input id="in-name" maxlength="20" placeholder="Player" autocomplete="nickname"></label>
+    <div class="field"><span>Play as</span>
+      <div class="seg" id="seg-color" role="radiogroup">
+        <button type="button" data-v="blue" class="on" role="radio" aria-checked="true">Blue<small>moves first</small></button>
+        <button type="button" data-v="red" role="radio" aria-checked="false">Red<small>moves second</small></button>
+        <button type="button" data-v="random" role="radio" aria-checked="false">Random<small>coin flip</small></button>
+      </div>
+    </div>
+    <details class="more">
+      <summary>Rule options</summary>
+      <label class="opt"><span>Damage per attack</span><input type="number" id="in-damage" min="0" max="99" step="1" value="2"></label>
+      <label class="opt"><span>Empty hexes block attacks<small>Only tiles in the same unbroken run of occupied hexes form pairs.</small></span><input type="checkbox" id="in-gaps"></label>
+    </details>
+    <button id="btn-create" class="primary wide">Create online game</button>
+    <button id="btn-local" class="ghost wide">Play on this device</button>
+    <div class="recent" id="recent" hidden><h3>Your recent games</h3><div id="recent-list"></div></div>
+    <button id="btn-howto" class="linkbtn">How to play</button>
+  </div>
+</div>
+
+<!-- joining someone else's game -->
+<div id="join" class="overlay" hidden>
+  <div class="sheet small" role="dialog" aria-labelledby="join-title">
+    <h2 class="brand" id="join-title"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 3l7 4v8l-7 4-7-4V7z" fill="#3a7bea"/><path d="M23 13l7 4v8l-7 4-7-4v-8z" fill="#e5484d"/></svg>Join game</h2>
+    <p class="tagline" id="join-text"></p>
+    <label class="field"><span>Your name</span><input id="join-name" maxlength="20" placeholder="Player" autocomplete="nickname"></label>
+    <button id="btn-join" class="primary wide">Join</button>
+    <button id="btn-watch" class="ghost wide">Just watch</button>
+    <button id="btn-join-rules" class="linkbtn">How to play</button>
+  </div>
+</div>
+
+<!-- rules + settings -->
+<div id="modal" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <h2 id="rules-title">How to play</h2>
+
+    <h3>Turns</h3>
+    <p><span class="b">Blue</span> opens by placing 1 tile. After that the players alternate placing 2 tiles per turn: <span class="r">Red</span> 2, <span class="b">Blue</span> 2, <span class="r">Red</span> 2, and so on. A tile can go on any empty hex — the board is infinite.</p>
+
+    <h3>Health</h3>
+    <p>A new tile starts with 1 health. At the end of every turn, every tile on the board gains:</p>
+    <ul>
+      <li><b>+1 per neighbor</b> of its own color (up to +6), and</li>
+      <li><b>+ the size of its blob</b> — the connected group of same-colored tiles it belongs to, counting itself.</li>
+    </ul>
+
+    <h3>Attacks</h3>
+    <p>Every pair of your tiles on the same line (any of the hex grid's 3 axes) deals <b id="dmg-text">2</b> damage to each enemy tile between them, at the end of every turn. Every pair counts, and tiles in between don't break a pair. Example: with Blue tiles at positions 1, 2, 4 and 5 and a Red tile at 3, there are 4 pairs around the Red tile (1–4, 1–5, 2–4, 2–5), so it takes <b id="dmg-example">8</b> damage. Each of the 3 axes adds its own damage.</p>
+    <p id="gap-text"></p>
+
+    <h3>End of turn</h3>
+    <p>Growth and damage are both worked out from the board as it stands, then applied together. Any tile at 0 health or below is destroyed. Your score is the total health of all your tiles.</p>
+
+    <h3>Badges</h3>
+    <p>Each tile previews what the end of this turn will do to it: <b style="color:#3fcf86">+ from neighbors</b> (top left), <b style="color:#f2b632">+ from blob size</b> (top right) and <b>− damage</b> (bottom, in the attacker's color). Zero-value badges are hidden.</p>
+
+    <h3>Settings</h3>
+    <p class="note" id="rules-locked" hidden>Damage and empty-hex rules were chosen when this online game was created.</p>
+    <label class="opt"><span>Damage per attack</span><input type="number" id="opt-damage" min="0" max="99" step="1" value="2"></label>
+    <label class="opt"><span>Empty hexes block attacks<small>When on, only tiles in the same unbroken run of occupied hexes form pairs.</small></span><input type="checkbox" id="opt-gaps"></label>
+    <label class="opt"><span>Show health change badges<small>The +neighbors, +blob and −damage preview on each tile.</small></span><input type="checkbox" id="opt-show" checked></label>
+
+    <h3>Controls</h3>
+    <ul>
+      <li>Click or tap an empty hex to place a tile.</li>
+      <li>Drag to pan. Scroll, pinch, or <kbd>+</kbd> / <kbd>−</kbd> to zoom. <kbd>H</kbd> fits all tiles in view.</li>
+      <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes your last placement. Online, you can take back a tile until your turn is finished.</li>
+      <li>Online games are saved on the server: reopen the link any time to continue. Rematch clears the board and swaps colors.</li>
+    </ul>
+    <div class="sheet-foot"><button id="btn-close">Got it</button></div>
+  </div>
+</div>
+
+<div id="toast" class="panel" role="status" aria-live="polite"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
